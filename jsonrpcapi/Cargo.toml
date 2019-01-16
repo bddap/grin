@@ -1,0 +1,27 @@
+[package]
+name = "grin_json_rpc_api"
+version = "0.5.2"
+authors = ["Grin Developers <mimblewimble@lists.launchpad.net>"]
+description = "JSON RPC APIs for grin, a simple, private and scalable cryptocurrency implementation based on the MimbleWimble chain format."
+license = "Apache-2.0"
+repository = "https://github.com/mimblewimble/grin"
+keywords = [ "crypto", "grin", "mimblewimble" ]
+workspace = ".."
+edition = "2018"
+
+[dependencies]
+grin_core = { path = "../core", version = "0.5.2" }
+grin_chain = { path = "../chain", version = "0.5.2" }
+grin_p2p = { path = "../p2p", version = "0.5.2" }
+grin_pool = { path = "../pool", version = "0.5.2" }
+grin_store = { path = "../store", version = "0.5.2" }
+grin_util = { path = "../util", version = "0.5.2" }
+grin_wallet = { path = "../wallet", version = "0.5.2" }
+grin_keychain = { path = "../keychain", version = "0.5.2" }
+jsonrpc-core = { git = "https://github.com/paritytech/jsonrpc" }
+jsonrpc-minihttp-server = { git = "https://github.com/paritytech/jsonrpc" }
+serde = "1"
+serde_derive = "1"
+serde_json = "1"
+
+

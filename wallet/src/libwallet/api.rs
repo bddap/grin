@@ -816,6 +816,23 @@ where
 	phantom_c: PhantomData<C>,
 }
 
+// derive(Clone) doesn't work here. We must implement Clone ourselves.
+// https://github.com/rust-lang/rust/issues/26925
+impl<W: ?Sized, C, K> Clone for APIForeign<W, C, K>
+where
+	W: WalletBackend<C, K>,
+	C: NodeClient,
+	K: Keychain,
+{
+	fn clone(&self) -> Self {
+		Self {
+			wallet: self.wallet.clone(),
+			phantom: PhantomData,
+			phantom_c: PhantomData,
+		}
+	}
+}
+
 impl<'a, W: ?Sized, C, K> APIForeign<W, C, K>
 where
 	W: WalletBackend<C, K>,
