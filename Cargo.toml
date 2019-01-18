@@ -12,7 +12,7 @@ build = "src/build/build.rs"
 edition = "2018"
 
 [workspace]
-members = ["api", "chain", "config", "core", "jsonrpcapi", "keychain", "p2p", "servers", "store", "util", "pool", "wallet"]
+members = ["api", "chain", "config", "core", "keychain", "p2p", "servers", "store", "util", "pool", "wallet"]
 exclude = ["etc/gen_gen"]
 
 [[bin]]
