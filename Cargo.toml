@@ -12,7 +12,7 @@ build = "src/build/build.rs"
 edition = "2018"
 
 [workspace]
-members = ["api", "chain", "config", "core", "keychain", "p2p", "servers", "store", "util", "pool", "wallet"]
+members = ["api", "chain", "config", "core", "jsonrpc", "jsonrpc_proc_macro", "keychain", "p2p", "servers", "store", "util", "pool", "wallet"]
 exclude = ["etc/gen_gen"]
 
 [[bin]]
@@ -28,6 +28,8 @@ ctrlc = { version = "3.1", features = ["termination"] }
 cursive = "0.9.0"
 humansize = "1.1.0"
 daemonize = "0.3"
+jsonrpc = { path = "./jsonrpc" }
+jsonrpc_proc_macro = { path = "./jsonrpc_proc_macro" }
 serde = "1"
 serde_json = "1"
 log = "0.4"

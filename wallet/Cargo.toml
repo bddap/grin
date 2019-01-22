@@ -30,7 +30,7 @@ ring = "0.13"
 uuid = { version = "0.6", features = ["serde", "v4"] }
 url = "1.7.0"
 chrono = { version = "0.4.4", features = ["serde"] }
-jsonrpc-core = { git = "https://github.com/paritytech/jsonrpc" }
+jsonrpc-core = "~8.0"
 
 grin_api = { path = "../api", version = "0.5.2" }
 grin_core = { path = "../core", version = "0.5.2" }
