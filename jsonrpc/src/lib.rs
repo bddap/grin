@@ -1,4 +1,4 @@
-// Allow #[derive(JSONRPCServer)] and #[derive(JSONRPCClient)] to be derived from a trait.
+// Declare JSONRPCServer and JSONRPCClient interfaces.
 
 use jsonrpc_core::{Error, IoHandler, Params, Value};
 
@@ -99,7 +99,7 @@ mod test {
 	use jsonrpc_proc_macro::jsonrpc_server;
 
 	#[jsonrpc_server]
-	pub trait Adder: Clone + Send + Sync {
+	pub trait Adder {
 		fn checked_add(&self, a: isize, b: isize) -> Option<isize>;
 		fn wrapping_add(&self, a: isize, b: isize) -> isize;
 	}
