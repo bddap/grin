@@ -8,7 +8,8 @@ use proc_macro2::Span;
 use quote::quote;
 use syn::spanned::Spanned;
 use syn::{
-	parse_macro_input, ArgSelfRef, FnArg, FnDecl, Ident, ItemTrait, MethodSig, Pat, TraitItem, Type,
+	parse_macro_input, ArgSelfRef, FnArg, FnDecl, Ident, ItemTrait, MethodSig, Pat, PatIdent,
+	TraitItem, Type,
 };
 
 #[proc_macro_attribute]
@@ -20,7 +21,9 @@ pub fn jsonrpc_server(
 	let server_impl = match impl_server(&trait_def) {
 		Ok(s) => s,
 		Err(reject) => {
-			reject.raise();
+			for r in reject {
+				r.raise();
+			}
 			return proc_macro::TokenStream::new();
 		}
 	};
@@ -31,26 +34,24 @@ pub fn jsonrpc_server(
 }
 
 // Generate a blanket JSONRPCServer implementation for types implementing trait.
-fn impl_server(tr: &ItemTrait) -> Result<proc_macro2::TokenStream, Rejection> {
+fn impl_server(tr: &ItemTrait) -> Result<proc_macro2::TokenStream, Vec<Rejection>> {
 	let trait_name = &tr.ident;
 	let methods: Vec<&MethodSig> = trait_methods(&tr)?;
 
 	for method in methods.iter() {
 		if method.ident.to_string().starts_with("rpc.") {
-			return Err(Rejection::create(
+			Err(Rejection::create(
 				method.ident.span(),
-				RejectReason::ReservedMethodPrefix,
-			));
+				Reason::ReservedMethodPrefix,
+			))?;
 		}
 	}
 
-	let handlers = methods
-		.iter()
-		.map(|method| add_handler(trait_name, method))
-		.collect::<Result<Vec<_>, Rejection>>()?;
+	let handlers = methods.iter().map(|method| add_handler(trait_name, method));
+	let handlers: Vec<proc_macro2::TokenStream> = aggregate_errs(partition(handlers))?;
 
 	Ok(quote! {
-		impl<T: #trait_name + 'static> JSONRPCServer for T where T: Clone + Send + Sync {
+		impl<T: #trait_name + 'static + Clone + Send + Sync> JSONRPCServer for T {
 			fn into_iohandler(self) -> IoHandler {
 				let mut io = IoHandler::new(); // Value to be returned.
 				#(#handlers)*
@@ -68,56 +69,52 @@ fn trait_methods<'a>(tr: &'a ItemTrait) -> Result<Vec<&'a MethodSig>, Rejection>
 			TraitItem::Method(method) => Ok(&method.sig),
 			other => Err(Rejection::create(
 				other.span(),
-				RejectReason::TraitNotStrictlyMethods,
+				Reason::TraitNotStrictlyMethods,
 			)),
 		})
 		.collect()
 }
 
+// Generate code to add method as a handler to IoHandler. The generated code assumes a mutable
+// IOHandler named 'io' exists in scope.
 fn add_handler(
 	trait_name: &Ident,
 	method: &MethodSig,
-) -> Result<proc_macro2::TokenStream, Rejection> {
+) -> Result<proc_macro2::TokenStream, Vec<Rejection>> {
 	let method_name = &method.ident;
-	let method_name_literal = format!("\"{}\"", method.ident);
+	let method_name_literal = &method.ident.to_string();
 	let args = get_args(&method.decl)?;
-	let arg_names_literals = args.iter().map(|(ident, _)| format!("\"{}\"", ident));
-	let drain_args = {
-		args.iter().enumerate().map(|(index, (ident, typ))| {
-			let argn = Ident::new(&format!("arg{}", index), Span::call_site());
-			let argname_literal = format!("\"{}\"", ident);
-			quote! {
+	let arg_name_literals = args.iter().map(|(id, _)| id.to_string());
+	let parse_args = args.iter().enumerate().map(|(index, (ident, typ))| {
+		let argname_literal = format!("\"{}\"", ident);
+		quote! {
+			{
 				let next_arg = ordered_args.next().expect(
 					"RPC method Got too few args. This is a bug." // checked in get_rpc_args
 				);
-				let #argn: #typ = serde_json::from_value(next_arg).map_err(|_| {
+				let argn: #typ = serde_json::from_value(next_arg).map_err(|_| {
 					InvalidArgs::InvalidArgStructure {
 						name: #argname_literal,
 						index: #index,
 					}
 				})?;
+				argn
 			}
-		})
-	};
-	let arg_list = args
-		.iter()
-		.enumerate()
-		.map(|(index, _)| Ident::new(&format!("arg{}", index), Span::call_site()));
+		}
+	});
 
 	Ok(quote! {
-		// each closure gets its own copy of the API object
+		// each closure gets its own copy of the API object; the API object must be Clone
 		let api = self.clone();
 		add_rpc_method(
 			&mut io,
 			#method_name_literal,
-			&[ #(#arg_names_literals),* ],
+			&[ #(#arg_name_literals),* ],
 			move |mut args: Vec<Value>| {
 				let mut ordered_args = args.drain(..);
 
-				#(#drain_args)*
-
 				// call the target procedure
-				let res = <#trait_name>::#method_name(&self, #(#arg_list),*);
+				let res = <#trait_name>::#method_name(&api, #(#parse_args),*);
 
 				// serialize result into a json value
 				let ret = serde_json::to_value(res).expect(
@@ -133,57 +130,85 @@ fn add_handler(
 
 // Get the name and type of each argument from method. Skip the first argument, which must be &self.
 // If the first argument is not &self, an error will be returned.
-fn get_args<'a>(method: &'a FnDecl) -> Result<Vec<(&'a Ident, &'a Type)>, Rejection> {
+fn get_args<'a>(method: &'a FnDecl) -> Result<Vec<(&'a Ident, &'a Type)>, Vec<Rejection>> {
 	let mut inputs = method.inputs.iter();
 	match inputs.next() {
 		Some(FnArg::SelfRef(ArgSelfRef {
 			mutability: None, ..
 		})) => Ok(()),
-		Some(a) => Err(Rejection::create(
-			a.span(),
-			RejectReason::FirstArgumentNotSelfRef,
-		)),
+		Some(a) => Err(Rejection::create(a.span(), Reason::FirstArgumentNotSelfRef)),
 		None => Err(Rejection::create(
 			method.inputs.span(),
-			RejectReason::FirstArgumentNotSelfRef,
+			Reason::FirstArgumentNotSelfRef,
 		)),
 	}?;
-	let args: Vec<(&Ident, &Type)> = inputs
-		.map(as_jsonrpc_arg)
-		.collect::<Result<_, Rejection>>()?;
-	Ok(args)
+	partition(inputs.map(as_jsonrpc_arg))
+}
+
+// If all Ok, return Vec of successful values, otherwise return Vec of errors.
+fn partition<K, E, I: Iterator<Item = Result<K, E>>>(iter: I) -> Result<Vec<K>, Vec<E>> {
+	let (min, _) = iter.size_hint();
+	let mut oks: Vec<K> = Vec::with_capacity(min);
+	let mut errs: Vec<E> = Vec::new();
+	for i in iter {
+		match i {
+			Ok(ok) => oks.push(ok),
+			Err(err) => errs.push(err),
+		}
+	}
+	if errs.is_empty() {
+		Ok(oks)
+	} else {
+		Err(errs)
+	}
 }
 
 fn as_jsonrpc_arg<'a>(arg: &'a FnArg) -> Result<(&'a Ident, &'a Type), Rejection> {
 	let arg = match arg {
 		FnArg::Captured(captured) => Ok(captured),
-		a => Err(Rejection::create(
-			a.span(),
-			RejectReason::ConcreteTypesRequired,
-		)),
+		a => Err(Rejection::create(a.span(), Reason::ConcreteTypesRequired)),
 	}?;
 	let ty = &arg.ty;
-	let ident = match &arg.pat {
-		Pat::Ident(id) => Ok(&id.ident),
-		a => Err(Rejection::create(
-			a.span(),
-			RejectReason::PatternMatchedArgsNotSupported,
-		)),
+	let pat_ident = match &arg.pat {
+		Pat::Ident(pat_ident) => Ok(pat_ident),
+		Pat::Ref(r) => Err(Rejection::create(r.span(), Reason::ReferenceArg)),
+		a => Err(Rejection::create(a.span(), Reason::PatternMatchedArg)),
+	}?;
+	let ident = match pat_ident {
+		PatIdent {
+			by_ref: Some(r), ..
+		} => Err(Rejection::create(r.span(), Reason::ReferenceArg)),
+		PatIdent {
+			mutability: Some(m),
+			..
+		} => Err(Rejection::create(m.span(), Reason::MutableArg)),
+		PatIdent {
+			subpat: Some((l, _)),
+			..
+		} => Err(Rejection::create(l.span(), Reason::PatternMatchedArg)),
+		PatIdent {
+			ident,
+			by_ref: None,
+			mutability: None,
+			subpat: None,
+		} => Ok(ident),
 	}?;
 	Ok((&ident, &ty))
 }
 
 struct Rejection {
 	span: Span,
-	reason: RejectReason,
+	reason: Reason,
 }
 
-enum RejectReason {
+enum Reason {
 	FirstArgumentNotSelfRef,
-	PatternMatchedArgsNotSupported,
+	PatternMatchedArg,
 	ConcreteTypesRequired,
 	TraitNotStrictlyMethods,
 	ReservedMethodPrefix,
+	ReferenceArg,
+	MutableArg,
 }
 
 impl Rejection {
@@ -204,7 +229,7 @@ impl Rejection {
 	// }
 	//
 	// more info: https://github.com/rust-lang/rust/issues/54140
-	fn create(span: Span, reason: RejectReason) -> Self {
+	fn create(span: Span, reason: Reason) -> Self {
 		Rejection { span, reason }
 	}
 
@@ -212,22 +237,35 @@ impl Rejection {
 	// becomes available, we'll be able to output pretty errors just like rustc!
 	fn raise(self) {
 		let description = match self.reason {
-			RejectReason::FirstArgumentNotSelfRef => {
-				"First argument to jsonrpc method must be &self."
-			}
-			RejectReason::PatternMatchedArgsNotSupported => {
+			Reason::FirstArgumentNotSelfRef => "First argument to jsonrpc method must be &self.",
+			Reason::PatternMatchedArg => {
 				"Pattern matched arguments are not supported in jsonrpc methods."
 			}
-			RejectReason::ConcreteTypesRequired => {
+			Reason::ConcreteTypesRequired => {
 				"Arguments and return values must have concrete types."
 			}
-			RejectReason::TraitNotStrictlyMethods => {
+			Reason::TraitNotStrictlyMethods => {
 				"Macro 'jsonrpc_server' expects trait definition containing methods only."
 			}
-			RejectReason::ReservedMethodPrefix => {
+			Reason::ReservedMethodPrefix => {
 				"The prefix 'rpc.' is reserved https://www.jsonrpc.org/specification#request_object"
 			}
+			Reason::ReferenceArg => "Reference arguments not supported in jsonrpc macro.",
+			Reason::MutableArg => "Mutable arguments not supported in jsonrpc macro.",
 		};
 		panic!("{:?} {}", self.span, description);
+	}
+}
+
+impl From<Rejection> for Vec<Rejection> {
+	fn from(r: Rejection) -> Vec<Rejection> {
+		vec![r]
+	}
+}
+
+fn aggregate_errs<K, E>(r: Result<K, Vec<Vec<E>>>) -> Result<K, Vec<E>> {
+	match r {
+		Err(mut e) => Err(e.drain(..).flatten().collect()),
+		Ok(a) => Ok(a),
 	}
 }
