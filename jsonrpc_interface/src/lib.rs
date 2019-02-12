@@ -1,33 +1,76 @@
 // Declare JSONRPCServer and JSONRPCClient interfaces.
 
-use jsonrpc_core::{Error, IoHandler, Params, Value};
+use jsonrpc_core::types::*;
+pub use jsonrpc_core::{Error, Params, Request, Value};
 
 pub trait JSONRPCServer {
-	fn into_iohandler(self) -> IoHandler;
+	fn handle(&self, method: &str, params: Params) -> Result<Value, Error>;
+
+	fn handle_call(&self, call: Call) -> Option<Output> {
+		match call {
+			Call::Notification(Notification { method, params, .. }) => {
+				let _ = self.handle(&method, params);
+				None
+			}
+			Call::MethodCall(MethodCall {
+				method,
+				params,
+				id,
+				jsonrpc,
+			}) => {
+				let output = match self.handle(&method, params) {
+					Ok(ok) => Output::Success(Success {
+						jsonrpc,
+						result: ok,
+						id,
+					}),
+					Err(err) => Output::Failure(Failure {
+						jsonrpc,
+						error: err,
+						id,
+					}),
+				};
+				Some(output)
+			}
+			Call::Invalid { id } => Some(Output::Failure(Failure {
+				jsonrpc: Some(Version::V2),
+				error: Error::invalid_request(),
+				id,
+			})),
+		}
+	}
+
+	fn handle_parsed(&self, request: Request) -> Option<Response> {
+		match request {
+			Request::Single(call) => self.handle_call(call).map(Response::Single),
+			Request::Batch(mut calls) => {
+				let outputs = calls
+					.drain(..)
+					.filter_map(|call| self.handle_call(call))
+					.collect::<Vec<_>>();
+				if outputs.is_empty() {
+					None
+				} else {
+					Some(Response::Batch(outputs))
+				}
+			}
+		}
+	}
+
+	/// Accept request as a jsonrpc string. Call handler. Return result as a jsonrpc string.
+	fn handle_raw(&self, request: &str) -> Option<String> {
+		let request: Request = serde_json::from_str(request)
+			.unwrap_or(Request::Single(Call::Invalid { id: Id::Null }));
+		self.handle_parsed(request).map(|response| {
+			serde_json::to_string(&response).expect("to_string does not perform io")
+		})
+	}
 }
 
 // The JSONRPCClient generator design is still WIP, but ideally clients will satisfy this
 // property:
 //   if T implements                  fn f(&self, args..) -> R
 //   then JSONRPCClient<T> implements fn f(&self, args..) -> Future<Result<R, E>>
-
-pub fn add_rpc_method<F>(
-	iohandler: &mut IoHandler,
-	name: &'static str,
-	arg_names: &'static [&'static str],
-	cb: F,
-) where
-	F: Fn(Vec<Value>) -> Result<Value, InvalidArgs>
-		+ std::marker::Sync
-		+ std::marker::Send
-		+ 'static,
-{
-	iohandler.add_method(name, move |params: Params| {
-		get_rpc_args(arg_names, params)
-			.and_then(|args| cb(args))
-			.map_err(std::convert::Into::into)
-	})
-}
 
 // Verify and convert jsonrpc Params into owned argument list.
 // Verifies:
@@ -94,11 +137,10 @@ impl Into<Error> for InvalidArgs {
 
 #[cfg(test)]
 mod test {
-	use crate::{add_rpc_method, InvalidArgs, JSONRPCServer};
+	use crate as rpc_interface;
+	use crate::{InvalidArgs, JSONRPCServer};
 	use assert_matches::assert_matches;
-	use jsonrpc_core::types::response::{Failure, Output, Response};
-	use jsonrpc_core::types::{Error, ErrorCode};
-	use jsonrpc_core::{IoHandler, Value};
+	use jsonrpc_core::types::*;
 	use jsonrpc_proc_macro::jsonrpc_server;
 	use serde_json;
 
@@ -145,21 +187,17 @@ mod test {
 		}
 	}
 
-	fn adder_call(request: &str) -> String {
-		let api = AdderImpl {};
-		let io = api.into_iohandler();
-		io.handle_request_sync(request).unwrap()
-	}
-
-	fn adder_call_ty(request: &str) -> Output {
-		match serde_json::from_str(&adder_call(request)).unwrap() {
-			Response::Single(out) => out,
-			Response::Batch(_) => panic!(),
-		}
-	}
-
 	fn assert_adder_response(request: &str, response: &str) {
-		assert_eq!(adder_call(request), response.to_owned());
+		assert_eq!(&AdderImpl {}.handle_raw(request).unwrap(), response);
+	}
+
+	fn handle_single(request: &str) -> Output {
+		let a: Option<Response> =
+			AdderImpl {}.handle_parsed(serde_json::from_str(&request).unwrap());
+		match a {
+			Some(Response::Single(a)) => a,
+			_ => panic!(),
+		}
 	}
 
 	#[test]
@@ -210,7 +248,7 @@ mod test {
 	#[test]
 	fn incorrect_method_name() {
 		assert_matches!(
-			adder_call_ty(r#"{"jsonrpc": "2.0", "method": "nonexist", "params": [], "id": 1}"#),
+			handle_single(r#"{"jsonrpc": "2.0", "method": "nonexist", "params": [], "id": 1}"#),
 			Output::Failure(Failure {
 				error: Error {
 					code: ErrorCode::MethodNotFound,
@@ -224,7 +262,7 @@ mod test {
 	#[test]
 	fn incorrect_args() {
 		assert_matches!(
-			adder_call_ty(r#"{"jsonrpc": "2.0", "method": "wrapping_add", "params": [], "id": 1}"#),
+			handle_single(r#"{"jsonrpc": "2.0", "method": "wrapping_add", "params": [], "id": 1}"#),
 			Output::Failure(Failure {
 				error: Error {
 					code: ErrorCode::InvalidParams,
@@ -234,9 +272,9 @@ mod test {
 			})
 		);
 		assert_matches!(
-			adder_call_ty(
+			handle_single(
 				r#"{"jsonrpc": "2.0", "method": "wrapping_add", "params": {
-                    "notanarg": 1, "notarg": 1}, "id": 1}"#
+	                "notanarg": 1, "notarg": 1}, "id": 1}"#
 			),
 			Output::Failure(Failure {
 				error: Error {
@@ -247,7 +285,7 @@ mod test {
 			})
 		);
 		assert_matches!(
-			adder_call_ty(
+			handle_single(
 				r#"{"jsonrpc": "2.0", "method": "wrapping_add", "params": [[], []], "id": 1}"#
 			),
 			Output::Failure(Failure {
@@ -267,7 +305,7 @@ mod test {
 			r#"{"jsonrpc":"2.0","result":[1,2,3,1,2,3],"id":1}"#,
 		);
 		assert_matches!(
-			adder_call_ty(
+			handle_single(
 				r#"{"jsonrpc": "2.0", "method": "repeat_list", "params": [[1], [12]], "id": 1}"#,
 			),
 			Output::Failure(Failure {
@@ -288,4 +326,11 @@ mod test {
 		);
 	}
 
+	#[test]
+	fn notification() {
+		let request =
+			serde_json::from_str(r#"{"jsonrpc": "2.0", "method": "succeed", "params": []}"#)
+				.unwrap();
+		assert_eq!(AdderImpl {}.handle_parsed(request), None);
+	}
 }

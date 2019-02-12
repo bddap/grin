@@ -47,15 +47,21 @@ fn impl_server(tr: &ItemTrait) -> Result<proc_macro2::TokenStream, Vec<Rejection
 		}
 	}
 
-	let handlers = methods.iter().map(|method| add_handler(trait_name, method));
+	let handlers = methods.iter().map(|method| {
+		let method_literal = method.ident.to_string();
+		let handler = add_handler(trait_name, method)?;
+		Ok(quote! { #method_literal => #handler })
+	});
 	let handlers: Vec<proc_macro2::TokenStream> = aggregate_errs(partition(handlers))?;
 
 	Ok(quote! {
 		impl<T: #trait_name + 'static + Clone + Send + Sync> JSONRPCServer for T {
-			fn into_iohandler(self) -> IoHandler {
-				let mut io = IoHandler::new(); // Value to be returned.
-				#(#handlers)*
-				io
+			fn handle(&self, method: &str, params: jsonrpc_core::types::Params)
+					  -> Result<jsonrpc_core::types::Value, jsonrpc_core::types::Error> {
+				match method {
+					#(#handlers),*
+					_ => Err(jsonrpc_core::types::Error::method_not_found()),
+				}
 			}
 		}
 	})
@@ -87,45 +93,35 @@ fn add_handler(
 	let arg_name_literals = args.iter().map(|(id, _)| id.to_string());
 	let parse_args = args.iter().enumerate().map(|(index, (ident, typ))| {
 		let argname_literal = format!("\"{}\"", ident);
-		quote! {
-			{
-				let next_arg = ordered_args.next().expect(
-					"RPC method Got too few args. This is a bug." // checked in get_rpc_args
-				);
-				let argn: #typ = serde_json::from_value(next_arg).map_err(|_| {
-					InvalidArgs::InvalidArgStructure {
-						name: #argname_literal,
-						index: #index,
-					}
-				})?;
-				argn
-			}
-		}
+		quote! {{
+			let next_arg = ordered_args.next().expect(
+				"RPC method Got too few args. This is a bug." // checked in get_rpc_args
+			);
+			serde_json::from_value(next_arg).map_err(|_| {
+				InvalidArgs::InvalidArgStructure {
+					name: #argname_literal,
+					index: #index,
+				}.into()
+			})?
+		}}
 	});
 
-	Ok(quote! {
-		// each closure gets its own copy of the API object; the API object must be Clone
-		let api = self.clone();
-		add_rpc_method(
-			&mut io,
-			#method_name_literal,
-			&[ #(#arg_name_literals),* ],
-			move |mut args: Vec<Value>| {
-				let mut ordered_args = args.drain(..);
+	Ok(quote! {{
+		let mut args: Vec<Value> =
+			rpc_interface::get_rpc_args(&[#(#arg_name_literals),*], params).map_err(|a| a.into())?;
+		let mut ordered_args = args.drain(..);
 
-				// call the target procedure
-				let res = <#trait_name>::#method_name(&api, #(#parse_args),*);
+		// call the target procedure
+		let res = <#trait_name>::#method_name(self, #(#parse_args),*);
 
-				// serialize result into a json value
-				let ret = serde_json::to_value(res).expect(
-					"serde_json::to_value unexpectedly returned an error, this shouldn't have \
-					 happened because serde_json::to_value does not perform io.",
-				);
-
-				Ok(ret)
-			},
+		// serialize result into a json value
+		let ret = serde_json::to_value(res).expect(
+			"serde_json::to_value unexpectedly returned an error, this shouldn't have \
+			 happened because serde_json::to_value does not perform io.",
 		);
-	})
+
+		Ok(ret)
+	}})
 }
 
 // Get the name and type of each argument from method. Skip the first argument, which must be &self.
