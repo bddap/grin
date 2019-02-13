@@ -2,6 +2,7 @@
 
 use jsonrpc_core::types::*;
 pub use jsonrpc_core::{Error, Params, Request, Value};
+use serde::ser::Serialize;
 
 pub trait JSONRPCServer {
 	fn handle(&self, method: &str, params: Params) -> Result<Value, Error>;
@@ -133,6 +134,53 @@ impl Into<Error> for InvalidArgs {
 			)),
 		}
 	}
+}
+
+/// Result types in the return position are handled differently from others.
+/// Errors are reported according to the
+/// [jsonrpc spec](https://www.jsonrpc.org/specification#error_object).
+/// Calling to_response on any type T that is not an Result will yield an Ok(T).
+/// Calling to_response on a Result<T, E> will result in either Ok(T) or Err(jsonrpc_core::Error).
+/// E must be convertable to an jsonrpc_core::Error.
+/// jsonrpc spec requires a unique integer id for every error type. That sounds like a hassle in
+/// this use-case. For now we'll semantically merge all error types into a single uni-type,
+/// granting a single id to be shared by all ;)
+///
+/// Instead using an integer id to identify errors, we'll use serde to report structured errors.
+trait ToRPCResult {
+	fn to_result(&self) -> Result<Value, Error>;
+}
+
+trait IsResult {
+	fn to_rpc_result(&self) -> Result<Value, Error>;
+}
+
+impl<A: Serialize, B: Serialize> ToRPCResult for Result<A, B> {
+	fn to_result(&self) -> Result<Value, Error> {
+		match self {
+			Ok(k) => Ok(to_value(k)),
+			Err(e) => Err(Error {
+				code: ErrorCode::ServerError(8),
+				message: "Server error.".into(),
+				data: Some(to_value(&e)),
+			}),
+		}
+	}
+}
+
+trait NotResult: !IsResult {}
+
+impl<T: NotResult + Serialize> ToRPCResult for T {
+	fn to_result(&self) -> Result<Value, Error> {
+		Ok(to_value(self))
+	}
+}
+
+fn to_value<T: Serialize>(t: &T) -> Value {
+	serde_json::to_value(t).expect(
+		"serde_json::to_value unexpectedly returned an error, this shouldn't have \
+		 happened because serde_json::to_value does not perform io.",
+	)
 }
 
 #[cfg(test)]

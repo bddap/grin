@@ -81,17 +81,14 @@ fn trait_methods<'a>(tr: &'a ItemTrait) -> Result<Vec<&'a MethodSig>, Rejection>
 		.collect()
 }
 
-// Generate code to add method as a handler to IoHandler. The generated code assumes a mutable
-// IOHandler named 'io' exists in scope.
 fn add_handler(
 	trait_name: &Ident,
 	method: &MethodSig,
 ) -> Result<proc_macro2::TokenStream, Vec<Rejection>> {
 	let method_name = &method.ident;
-	let method_name_literal = &method.ident.to_string();
 	let args = get_args(&method.decl)?;
 	let arg_name_literals = args.iter().map(|(id, _)| id.to_string());
-	let parse_args = args.iter().enumerate().map(|(index, (ident, typ))| {
+	let parse_args = args.iter().enumerate().map(|(index, (ident, _))| {
 		let argname_literal = format!("\"{}\"", ident);
 		quote! {{
 			let next_arg = ordered_args.next().expect(
@@ -114,13 +111,7 @@ fn add_handler(
 		// call the target procedure
 		let res = <#trait_name>::#method_name(self, #(#parse_args),*);
 
-		// serialize result into a json value
-		let ret = serde_json::to_value(res).expect(
-			"serde_json::to_value unexpectedly returned an error, this shouldn't have \
-			 happened because serde_json::to_value does not perform io.",
-		);
-
-		Ok(ret)
+		rpc_interface::ToRPCResult::to_result(&res)
 	}})
 }
 
