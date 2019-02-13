@@ -14,7 +14,7 @@ use syn::{
 
 #[proc_macro_attribute]
 pub fn jsonrpc_server(
-	_attr: proc_macro::TokenStream,
+	_: proc_macro::TokenStream,
 	item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
 	let trait_def = parse_macro_input!(item as ItemTrait);
@@ -50,16 +50,16 @@ fn impl_server(tr: &ItemTrait) -> Result<proc_macro2::TokenStream, Vec<Rejection
 	let handlers = methods.iter().map(|method| {
 		let method_literal = method.ident.to_string();
 		let handler = add_handler(trait_name, method)?;
-		Ok(quote! { #method_literal => #handler })
+		Ok(quote! { #method_literal => jsonrpc_interface::try_serialize(& #handler) })
 	});
 	let handlers: Vec<proc_macro2::TokenStream> = aggregate_errs(partition(handlers))?;
 
 	Ok(quote! {
-		impl<T: #trait_name + 'static + Clone + Send + Sync> JSONRPCServer for T {
-			fn handle(&self, method: &str, params: jsonrpc_core::types::Params)
-					  -> Result<jsonrpc_core::types::Value, jsonrpc_core::types::Error> {
+		impl<T: #trait_name> jsonrpc_interface::JSONRPCServer for T {
+			fn handle(&self, method: &str, params: jsonrpc_interface::Params)
+					  -> Result<jsonrpc_interface::Value, jsonrpc_interface::Error> {
 				match method {
-					#(#handlers),*
+					#(#handlers,)*
 					_ => Err(jsonrpc_core::types::Error::method_not_found()),
 				}
 			}
@@ -94,8 +94,8 @@ fn add_handler(
 			let next_arg = ordered_args.next().expect(
 				"RPC method Got too few args. This is a bug." // checked in get_rpc_args
 			);
-			serde_json::from_value(next_arg).map_err(|_| {
-				InvalidArgs::InvalidArgStructure {
+			jsonrpc_interface::serde_json::from_value(next_arg).map_err(|_| {
+				jsonrpc_interface::InvalidArgs::InvalidArgStructure {
 					name: #argname_literal,
 					index: #index,
 				}.into()
@@ -104,14 +104,16 @@ fn add_handler(
 	});
 
 	Ok(quote! {{
-		let mut args: Vec<Value> =
-			rpc_interface::get_rpc_args(&[#(#arg_name_literals),*], params).map_err(|a| a.into())?;
+		let mut args: Vec<jsonrpc_interface::Value> =
+			jsonrpc_interface::get_rpc_args(&[#(#arg_name_literals),*], params)
+			.map_err(|a| a.into())?;
+
 		let mut ordered_args = args.drain(..);
 
 		// call the target procedure
 		let res = <#trait_name>::#method_name(self, #(#parse_args),*);
 
-		rpc_interface::ToRPCResult::to_result(&res)
+		res
 	}})
 }
 
@@ -150,7 +152,7 @@ fn partition<K, E, I: Iterator<Item = Result<K, E>>>(iter: I) -> Result<Vec<K>, 
 	}
 }
 
-fn as_jsonrpc_arg<'a>(arg: &'a FnArg) -> Result<(&'a Ident, &'a Type), Rejection> {
+fn as_jsonrpc_arg(arg: &FnArg) -> Result<(&Ident, &Type), Rejection> {
 	let arg = match arg {
 		FnArg::Captured(captured) => Ok(captured),
 		a => Err(Rejection::create(a.span(), Reason::ConcreteTypesRequired)),
