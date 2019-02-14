@@ -10,11 +10,11 @@ use serde::ser::Serialize;
 pub use serde_json;
 
 /// ```
-///	use jsonrpc_interface::{self, JSONRPCServer};
+///	use jsonrpc::{self, JSONRPCServer};
 ///
 /// // Passing AdderImpl to jsonrpc_server macro will implement the JSONRPCServer trait for
 /// // AdderImpl.
-///	#[jsonrpc_interface::jsonrpc_server(AdderImpl)]
+///	#[jsonrpc::jsonrpc_server(AdderImpl)]
 ///	pub trait Adder {
 ///		fn checked_add(&self, a: isize, b: isize) -> Option<isize>;
 ///		fn wrapping_add(&self, a: isize, b: isize) -> isize;
@@ -62,10 +62,10 @@ pub use serde_json;
 /// ```
 ///
 /// ```
-/// # use jsonrpc_interface::{self, JSONRPCServer};
+/// # use jsonrpc::{self, JSONRPCServer};
 /// #
 /// // Multilple implementations may be passed to jsonrpc_server
-///	#[jsonrpc_interface::jsonrpc_server(ImplOne, ImplTwo)]
+///	#[jsonrpc::jsonrpc_server(ImplOne, ImplTwo)]
 ///	pub trait Useless {}
 /// struct ImplOne;
 /// enum ImplTwo {};
@@ -217,7 +217,7 @@ pub fn try_serialize<T: Serialize>(t: &T) -> Result<Value, Error> {
 
 #[cfg(test)]
 mod test {
-	mod jsonrpc_interface {
+	mod jsonrpc {
 		pub use crate::*;
 	}
 	use super::{jsonrpc_server, JSONRPCServer};

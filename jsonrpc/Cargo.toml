@@ -1,5 +1,5 @@
 [package]
-name = "jsonrpc_interface"
+name = "jsonrpc"
 version = "0.1.0"
 authors = ["Andrew Dirksen <andrew@dirksen.com>"]
 edition = "2018"

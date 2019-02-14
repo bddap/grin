@@ -12,7 +12,7 @@ build = "src/build/build.rs"
 edition = "2018"
 
 [workspace]
-members = ["api", "chain", "config", "core", "jsonrpc_interface", "jsonrpc_proc_macro", "keychain", "p2p", "servers", "store", "util", "pool", "wallet"]
+members = ["api", "chain", "config", "core", "jsonrpc", "jsonrpc_proc_macro", "keychain", "p2p", "servers", "store", "util", "pool", "wallet"]
 exclude = ["etc/gen_gen"]
 
 [[bin]]
@@ -28,8 +28,6 @@ ctrlc = { version = "3.1", features = ["termination"] }
 cursive = "0.9.0"
 humansize = "1.1.0"
 daemonize = "0.3"
-jsonrpc_proc_macro = { path = "./jsonrpc_proc_macro" }
-jsonrpc_interface = { path = "./jsonrpc_interface" }
 serde = "1"
 serde_json = "1"
 log = "0.4"
@@ -37,6 +35,9 @@ term = "0.5"
 linefeed = "0.5"
 failure = "0.1"
 failure_derive = "0.1"
+
+jsonrpc = { path = "./jsonrpc" }
+jsonrpc_proc_macro = { path = "./jsonrpc_proc_macro" }
 
 grin_api = { path = "./api", version = "0.5.2" }
 grin_config = { path = "./config", version = "0.5.2" }

@@ -72,16 +72,16 @@ fn impl_server(
 	let handlers = methods.iter().map(|method| {
 		let method_literal = method.ident.to_string();
 		let handler = add_handler(trait_name, method)?;
-		Ok(quote! { #method_literal => jsonrpc_interface::try_serialize(& #handler) })
+		Ok(quote! { #method_literal => jsonrpc::try_serialize(& #handler) })
 	});
 	let handlers: Vec<proc_macro2::TokenStream> = aggregate_errs(partition(handlers))?;
 
 	let impls = types.iter().map(|typ| {
 		let handl = handlers.clone();
 		quote! {
-			impl jsonrpc_interface::JSONRPCServer for #typ {
-				fn handle(&self, method: &str, params: jsonrpc_interface::Params)
-						  -> Result<jsonrpc_interface::Value, jsonrpc_interface::Error> {
+			impl jsonrpc::JSONRPCServer for #typ {
+				fn handle(&self, method: &str, params: jsonrpc::Params)
+						  -> Result<jsonrpc::Value, jsonrpc::Error> {
 					match method {
 						#(#handl,)*
 						_ => Err(jsonrpc_core::types::Error::method_not_found()),
@@ -121,8 +121,8 @@ fn add_handler(
 			let next_arg = ordered_args.next().expect(
 				"RPC method Got too few args. This is a bug." // checked in get_rpc_args
 			);
-			jsonrpc_interface::serde_json::from_value(next_arg).map_err(|_| {
-				jsonrpc_interface::InvalidArgs::InvalidArgStructure {
+			jsonrpc::serde_json::from_value(next_arg).map_err(|_| {
+				jsonrpc::InvalidArgs::InvalidArgStructure {
 					name: #argname_literal,
 					index: #index,
 				}.into()
@@ -131,8 +131,8 @@ fn add_handler(
 	});
 
 	Ok(quote! {{
-		let mut args: Vec<jsonrpc_interface::Value> =
-			jsonrpc_interface::get_rpc_args(&[#(#arg_name_literals),*], params)
+		let mut args: Vec<jsonrpc::Value> =
+			jsonrpc::get_rpc_args(&[#(#arg_name_literals),*], params)
 			.map_err(|a| a.into())?;
 
 		let mut ordered_args = args.drain(..);
