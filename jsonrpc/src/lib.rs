@@ -4,7 +4,6 @@ pub use jsonrpc_core::types::{
 	Call, Error, ErrorCode, Failure, Id, MethodCall, Notification, Output, Params, Request,
 	Response, Success, Value, Version,
 };
-// use jsonrpc_core::types::*;
 pub use jsonrpc_proc_macro::jsonrpc_server;
 use serde::ser::Serialize;
 pub use serde_json;
@@ -14,7 +13,7 @@ pub use serde_json;
 ///
 /// // Passing AdderImpl to jsonrpc_server macro will implement the JSONRPCServer trait for
 /// // AdderImpl.
-///	#[jsonrpc::jsonrpc_server(AdderImpl)]
+///	#[jsonrpc::jsonrpc_server]
 ///	pub trait Adder {
 ///		fn checked_add(&self, a: isize, b: isize) -> Option<isize>;
 ///		fn wrapping_add(&self, a: isize, b: isize) -> isize;
@@ -36,7 +35,7 @@ pub use serde_json;
 ///     }
 ///	}
 ///
-/// let adder = AdderImpl {};
+/// let adder = (&AdderImpl {} as &dyn Adder);
 ///
 /// // Positional arguments.
 ///	assert_eq!(
@@ -64,11 +63,11 @@ pub use serde_json;
 /// ```
 /// # use jsonrpc::{self, JSONRPCServer};
 /// #
-/// // Multilple implementations may be passed to jsonrpc_server
-///	#[jsonrpc::jsonrpc_server(ImplOne, ImplTwo)]
+/// // Multilple types may implement server trait
+///	#[jsonrpc::jsonrpc_server]
 ///	pub trait Useless {}
 /// struct ImplOne;
-/// enum ImplTwo {};
+/// enum ImplTwo {}
 /// ```
 pub trait JSONRPCServer {
 	fn handle(&self, method: &str, params: Params) -> Result<Value, Error>;
@@ -224,7 +223,7 @@ mod test {
 	use assert_matches::assert_matches;
 	use jsonrpc_core::types::*;
 
-	#[jsonrpc_server(AdderImpl)]
+	#[jsonrpc_server]
 	pub trait Adder {
 		fn checked_add(&self, a: isize, b: isize) -> Option<isize>;
 		fn wrapping_add(&self, a: isize, b: isize) -> isize;
@@ -267,12 +266,15 @@ mod test {
 	}
 
 	fn assert_adder_response(request: &str, response: &str) {
-		assert_eq!(&AdderImpl {}.handle_raw(request).unwrap(), response);
+		assert_eq!(
+			&(&AdderImpl {} as &dyn Adder).handle_raw(request).unwrap(),
+			response
+		);
 	}
 
 	fn handle_single(request: &str) -> Output {
 		let a: Option<Response> =
-			AdderImpl {}.handle_parsed(serde_json::from_str(&request).unwrap());
+			(&AdderImpl {} as &dyn Adder).handle_parsed(serde_json::from_str(&request).unwrap());
 		match a {
 			Some(Response::Single(a)) => a,
 			_ => panic!(),
@@ -410,6 +412,6 @@ mod test {
 		let request =
 			serde_json::from_str(r#"{"jsonrpc": "2.0", "method": "succeed", "params": []}"#)
 				.unwrap();
-		assert_eq!(AdderImpl {}.handle_parsed(request), None);
+		assert_eq!((&AdderImpl {} as &dyn Adder).handle_parsed(request), None);
 	}
 }
