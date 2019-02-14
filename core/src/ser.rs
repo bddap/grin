@@ -35,7 +35,7 @@ use std::time::Duration;
 use std::{cmp, error, fmt};
 
 /// Possible errors deriving from serializing or deserializing.
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Error {
 	/// Wraps an io error produced when reading or writing
 	IOErr(String, io::ErrorKind),
@@ -615,7 +615,7 @@ where
 			match elem {
 				Ok(e) => buf.push(e),
 				Err(Error::IOErr(ref _d, ref kind)) if *kind == io::ErrorKind::UnexpectedEof => {
-					break
+					break;
 				}
 				Err(e) => return Err(e),
 			}

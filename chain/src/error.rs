@@ -30,7 +30,7 @@ pub struct Error {
 }
 
 /// Chain error definitions
-#[derive(Clone, Eq, PartialEq, Debug, Fail)]
+#[derive(Clone, Eq, PartialEq, Debug, Fail, Serialize)]
 pub enum ErrorKind {
 	/// The block doesn't fit anywhere in our chain
 	#[fail(display = "Block is unfit: {}", _0)]

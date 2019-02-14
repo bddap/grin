@@ -23,7 +23,7 @@ pub struct Error {
 	inner: Context<ErrorKind>,
 }
 
-#[derive(Clone, Debug, Eq, Fail, PartialEq)]
+#[derive(Clone, Debug, Eq, Fail, PartialEq, Serialize)]
 /// Libwallet error types
 pub enum ErrorKind {
 	/// Verification error

@@ -37,7 +37,7 @@ pub use self::id::ShortId;
 pub use self::transaction::*;
 
 /// Common errors
-#[derive(Fail, Debug)]
+#[derive(Fail, Debug, Serialize, Deserialize)]
 pub enum Error {
 	/// Human readable represenation of amount is invalid
 	#[fail(display = "Amount string was invalid")]

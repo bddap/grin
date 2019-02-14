@@ -38,7 +38,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 // Size of an identifier in bytes
 pub const IDENTIFIER_SIZE: usize = 17;
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub enum Error {
 	Secp(secp::Error),
 	KeyDerivation(extkey_bip32::Error),
@@ -380,7 +380,7 @@ impl BlindSum {
 /// derivation depths go and allows differentiating paths. As m/0, m/0/0
 /// or m/0/0/0/0 result in different derivations, a path needs to encode
 /// its maximum depth.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct ExtKeychainPath {
 	pub depth: u8,
 	pub path: [extkey_bip32::ChildNumber; 4],
@@ -442,7 +442,7 @@ impl ExtKeychainPath {
 }
 
 /// Wrapper for amount + path
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct ValueExtKeychainPath {
 	pub value: u64,
 	pub ext_keychain_path: ExtKeychainPath,

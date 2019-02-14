@@ -40,7 +40,7 @@ pub struct Error {
 	inner: Context<ErrorKind>,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Fail)]
+#[derive(Clone, Eq, PartialEq, Debug, Fail, Serialize)]
 pub enum ErrorKind {
 	#[fail(display = "Internal error: {}", _0)]
 	Internal(String),

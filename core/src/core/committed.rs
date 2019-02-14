@@ -22,7 +22,7 @@ use crate::util::secp::pedersen::Commitment;
 use crate::util::{secp, secp_static, static_secp_instance};
 
 /// Errors from summing and verifying kernel excesses via committed trait.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Error {
 	/// Keychain related error.
 	Keychain(keychain::Error),

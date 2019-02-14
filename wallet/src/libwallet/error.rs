@@ -23,13 +23,13 @@ use std::fmt::{self, Display};
 use std::io;
 
 /// Error definition
-#[derive(Debug, Fail)]
+#[derive(Debug, Fail, Serialize)]
 pub struct Error {
 	inner: Context<ErrorKind>,
 }
 
 /// Wallet errors, mostly wrappers around underlying crypto or I/O errors.
-#[derive(Clone, Eq, PartialEq, Debug, Fail)]
+#[derive(Clone, Eq, PartialEq, Debug, Fail, Serialize)]
 pub enum ErrorKind {
 	/// Not enough funds
 	#[fail(
