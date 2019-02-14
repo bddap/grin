@@ -8,17 +8,24 @@ use proc_macro2::Span;
 use quote::quote;
 use syn::spanned::Spanned;
 use syn::{
-	parse_macro_input, ArgSelfRef, FnArg, FnDecl, Ident, ItemTrait, MethodSig, Pat, PatIdent,
-	TraitItem, Type,
+	parse_macro_input, ArgSelfRef, AttributeArgs, FnArg, FnDecl, Ident, ItemTrait, Meta, MethodSig,
+	NestedMeta, Pat, PatIdent, TraitItem, Type,
 };
 
 #[proc_macro_attribute]
 pub fn jsonrpc_server(
-	_: proc_macro::TokenStream,
+	implementations: proc_macro::TokenStream,
 	item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
+	let attrs = match parse_attrs(parse_macro_input!(implementations as AttributeArgs)) {
+		Ok(attrs) => attrs,
+		Err(err) => {
+			err.raise();
+			return proc_macro::TokenStream::new();
+		}
+	};
 	let trait_def = parse_macro_input!(item as ItemTrait);
-	let server_impl = match impl_server(&trait_def) {
+	let server_impl = match impl_server(&trait_def, &attrs) {
 		Ok(s) => s,
 		Err(reject) => {
 			for r in reject {
@@ -33,8 +40,23 @@ pub fn jsonrpc_server(
 	})
 }
 
-// Generate a blanket JSONRPCServer implementation for types implementing trait.
-fn impl_server(tr: &ItemTrait) -> Result<proc_macro2::TokenStream, Vec<Rejection>> {
+fn parse_attrs(args: AttributeArgs) -> Result<Vec<Ident>, Rejection> {
+	args.iter()
+		.map(|a| match a {
+			NestedMeta::Meta(Meta::Word(ident)) => Ok(ident.clone()),
+			other => Err(Rejection::create(
+				other.span(),
+				Reason::AttributeNotIdentifier,
+			)),
+		})
+		.collect()
+}
+
+// Generate a blanket JSONRPCServer implementation for type. Type is asummed to implement tr
+fn impl_server(
+	tr: &ItemTrait,
+	types: &[proc_macro2::Ident],
+) -> Result<proc_macro2::TokenStream, Vec<Rejection>> {
 	let trait_name = &tr.ident;
 	let methods: Vec<&MethodSig> = trait_methods(&tr)?;
 
@@ -54,17 +76,22 @@ fn impl_server(tr: &ItemTrait) -> Result<proc_macro2::TokenStream, Vec<Rejection
 	});
 	let handlers: Vec<proc_macro2::TokenStream> = aggregate_errs(partition(handlers))?;
 
-	Ok(quote! {
-		impl<T: #trait_name> jsonrpc_interface::JSONRPCServer for T {
-			fn handle(&self, method: &str, params: jsonrpc_interface::Params)
-					  -> Result<jsonrpc_interface::Value, jsonrpc_interface::Error> {
-				match method {
-					#(#handlers,)*
-					_ => Err(jsonrpc_core::types::Error::method_not_found()),
+	let impls = types.iter().map(|typ| {
+		let handl = handlers.clone();
+		quote! {
+			impl jsonrpc_interface::JSONRPCServer for #typ {
+				fn handle(&self, method: &str, params: jsonrpc_interface::Params)
+						  -> Result<jsonrpc_interface::Value, jsonrpc_interface::Error> {
+					match method {
+						#(#handl,)*
+						_ => Err(jsonrpc_core::types::Error::method_not_found()),
+					}
 				}
 			}
 		}
-	})
+	});
+
+	Ok(quote! {#(#impls)*})
 }
 
 // return all methods in the trait, or reject if trait contains an item that is not a method
@@ -198,6 +225,7 @@ enum Reason {
 	ReservedMethodPrefix,
 	ReferenceArg,
 	MutableArg,
+	AttributeNotIdentifier,
 }
 
 impl Rejection {
@@ -241,6 +269,7 @@ impl Rejection {
 			}
 			Reason::ReferenceArg => "Reference arguments not supported in jsonrpc macro.",
 			Reason::MutableArg => "Mutable arguments not supported in jsonrpc macro.",
+			Reason::AttributeNotIdentifier => "Macro attribute must be identifier.",
 		};
 		panic!("{:?} {}", self.span, description);
 	}

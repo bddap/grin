@@ -12,7 +12,7 @@ pub use serde_json;
 /// ```
 ///	use jsonrpc_interface;
 ///
-///	#[jsonrpc_interface::jsonrpc_server]
+///	#[jsonrpc_interface::jsonrpc_server(AdderImpl)]
 ///	pub trait Adder {
 ///		fn checked_add(&self, a: isize, b: isize) -> Option<isize>;
 ///		fn wrapping_add(&self, a: isize, b: isize) -> isize;
@@ -29,7 +29,6 @@ pub use serde_json;
 ///		}
 ///	}
 /// ```
-
 pub trait JSONRPCServer {
 	fn handle(&self, method: &str, params: Params) -> Result<Value, Error>;
 
@@ -184,7 +183,7 @@ mod test {
 	use assert_matches::assert_matches;
 	use jsonrpc_core::types::*;
 
-	#[jsonrpc_server]
+	#[jsonrpc_server(AdderImpl)]
 	pub trait Adder {
 		fn checked_add(&self, a: isize, b: isize) -> Option<isize>;
 		fn wrapping_add(&self, a: isize, b: isize) -> isize;
