@@ -5,7 +5,7 @@ authors = ["Andrew Dirksen <andrew@dirksen.com>"]
 edition = "2018"
 
 [dependencies]
-jsonrpc_proc_macro = { path = "../jsonrpc_proc_macro" }
+jsonrpc_proc_macro = { path = "./proc_macros" }
 serde_json = "1"
 serde = "1"
 syn = "0.15.26"

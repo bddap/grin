@@ -692,7 +692,6 @@ dependencies = [
  "grin_wallet 0.5.2",
  "humansize 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "jsonrpc 0.1.0",
- "jsonrpc_proc_macro 0.1.0",
  "linefeed 0.5.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "reqwest 0.9.5 (registry+https://github.com/rust-lang/crates.io-index)",
