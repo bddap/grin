@@ -10,12 +10,15 @@ use serde::ser::Serialize;
 pub use serde_json;
 
 /// ```
-///	use jsonrpc_interface;
+///	use jsonrpc_interface::{self, JSONRPCServer};
 ///
+/// // Passing AdderImpl to jsonrpc_server macro will implement the JSONRPCServer trait for
+/// // AdderImpl.
 ///	#[jsonrpc_interface::jsonrpc_server(AdderImpl)]
 ///	pub trait Adder {
 ///		fn checked_add(&self, a: isize, b: isize) -> Option<isize>;
 ///		fn wrapping_add(&self, a: isize, b: isize) -> isize;
+///     fn is_some(&self, a: Option<usize>) -> bool;
 ///	}
 ///
 ///	struct AdderImpl;
@@ -25,9 +28,47 @@ pub use serde_json;
 ///		}
 ///
 ///		fn wrapping_add(&self, a: isize, b: isize) -> isize {
-///			a.wrapping_add(b)
-///		}
+///         a.wrapping_add(b)
+///     }
+///
+///     fn is_some(&self, a: Option<usize>) -> bool {
+///         a.is_some()
+///     }
 ///	}
+///
+/// let adder = AdderImpl {};
+///
+/// // Positional arguments.
+///	assert_eq!(
+///		adder.handle_raw(
+///			r#"{"jsonrpc": "2.0", "method": "wrapping_add", "params": [1, 2], "id": 1}"#
+///		),
+///		Some(r#"{"jsonrpc":"2.0","result":3,"id":1}"#.into())
+///	);
+///
+///	// Named arguments are handled automatially
+///	assert_eq!(
+///		adder.handle_raw(
+///			r#"{"jsonrpc": "2.0", "method": "wrapping_add", "params": {"a": 1, "b":2}, "id": 1}"#
+///		),
+///		Some(r#"{"jsonrpc":"2.0","result":3,"id":1}"#.into())
+///	);
+///
+///	// Calls with no id are treated as notifications
+///	assert_eq!(
+///		adder.handle_raw(r#"{"jsonrpc": "2.0", "method": "wrapping_add", "params": [1, 1]}"#),
+///		None
+///	);
+/// ```
+///
+/// ```
+/// # use jsonrpc_interface::{self, JSONRPCServer};
+/// #
+/// // Multilple implementations may be passed to jsonrpc_server
+///	#[jsonrpc_interface::jsonrpc_server(ImplOne, ImplTwo)]
+///	pub trait Useless {}
+/// struct ImplOne;
+/// enum ImplTwo {};
 /// ```
 pub trait JSONRPCServer {
 	fn handle(&self, method: &str, params: Params) -> Result<Value, Error>;

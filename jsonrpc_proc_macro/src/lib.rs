@@ -52,7 +52,7 @@ fn parse_attrs(args: AttributeArgs) -> Result<Vec<Ident>, Rejection> {
 		.collect()
 }
 
-// Generate a blanket JSONRPCServer implementation for type. Type is asummed to implement tr
+// Generate a JSONRPCServer implementation for types. Types are asummed to implement tr
 fn impl_server(
 	tr: &ItemTrait,
 	types: &[proc_macro2::Ident],
